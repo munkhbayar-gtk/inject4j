@@ -1,0 +1,34 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>inject4j</groupId>
+    <artifactId>inject4j</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>inject4j</name>
+    <description>inject4j</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <java.version>21</java.version>
+        <inject4j-core.version>0.0.1-SNAPSHOT</inject4j-core.version>
+    </properties>
+
+    <modules>
+        <module>inject4j-core</module>
+        <module>inject4j-web</module>
+    </modules>
+    <dependencies>
+        <!-- Dependencies common to all modules go here -->
+        <dependency>
+            <groupId>inject4j</groupId>
+            <artifactId>inject4j-core</artifactId>
+            <version>${inject4j-core.version}</version>
+        </dependency>
+    </dependencies>
+
+</project>
