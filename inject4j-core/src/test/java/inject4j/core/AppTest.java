@@ -1,5 +1,7 @@
 package inject4j.core;
 
+import inject4j.core.annotation.Context;
+import inject4j.core.utils.Inject4jUtils;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -78,4 +80,11 @@ public class AppTest
         resolver.resolve(src);
         System.out.println(src);
     }
+
+    public void testFindClassByAnnotation() {
+        List<Class<?>> classes = Inject4jUtils.findClassesByAnnotation("inject4j", Context.class);
+        System.out.println(classes.size());
+        System.out.println(classes);
+    }
+
 }

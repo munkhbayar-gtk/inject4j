@@ -21,7 +21,8 @@ class PropertySourceInputStream implements  PropertySource{
         }catch (IOException e) {
             throw e;
         }finally {
-            input.close();
+            if(input != null)
+                input.close();
         }
         return ret;
     }

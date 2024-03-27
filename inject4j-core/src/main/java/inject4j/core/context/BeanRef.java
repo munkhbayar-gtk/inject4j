@@ -3,7 +3,7 @@ package inject4j.core.context;
 public class BeanRef {
     private boolean created;
 
-    private final Class<?> beanType;
+    final Class<?> beanType;
     private Object bean;
     private final String name;
 

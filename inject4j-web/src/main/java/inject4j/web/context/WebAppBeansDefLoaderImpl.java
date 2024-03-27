@@ -18,16 +18,15 @@ public class WebAppBeansDefLoaderImpl implements BeanFactoriesLoader {
         }
         return null;
     }
-    private List<Class<?>> rests() {
+    private List<Class<?>> rests(AppBeanContext context) {
         // load rest classes from app basePackage.
-
-        return List.of();
+        return context.findClassesByAnnotation(Rest.class);
     }
 
 
     @Override
     public List<BeanFactory> getBeanFactories(Environment env, AppBeanContext context) {
-        var restClasses = rests();
+        var restClasses = rests(context);
         return restClasses.stream()
                 .map(restClass -> createBeanFactory(restClass, env, context))
                 .filter(Objects::nonNull)

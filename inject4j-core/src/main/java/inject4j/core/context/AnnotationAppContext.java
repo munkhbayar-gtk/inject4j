@@ -1,12 +1,14 @@
 package inject4j.core.context;
 
 import inject4j.core.annotation.*;
+import inject4j.core.utils.Inject4jUtils;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.*;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -15,33 +17,25 @@ import java.util.stream.IntStream;
 class AnnotationAppContext implements AppBeanContext{
 
     private final Map<String, BeanRef> beans = new HashMap<>();
-    private final Set<Class<?>> contextClasses = new HashSet<>();
+    private final Set<Class<?>> contextClasses;
     private final Environment environment;
 
-    static AnnotationAppContext create(Environment environment, Class<?> ... contextClasses ) {
-        return new AnnotationAppContext(environment, contextClasses);
+    private final String[] basePackages;
+    static AnnotationAppContext create(String[] basePackages, Environment environment ) {
+        return new AnnotationAppContext(basePackages, environment);
     }
-    private AnnotationAppContext(Environment environment, Class<?> ... contextClasses ) {
+    private AnnotationAppContext(String[] basePackages, Environment environment) {
         this.environment = environment;
-        var list = Arrays.stream(contextClasses)
-                .peek((clz)->{
-                    Context context = clz.getAnnotation(Context.class);
-                    if(context == null) {
-                        throw new IllegalArgumentException(String.format("%s must have Context Annotation", clz.getCanonicalName()));
-                    }
-                    /*try{
-                        if(clz.getConstructor() == null) {
-                            throw new IllegalArgumentException(String.format("%s must have a default contructor", clz.getCanonicalName()));
-                        }
-                    }catch (Exception e) {
-
-                    }
-                     */
-                })
-                .toList();
-        this.contextClasses.addAll(list);
+        this.basePackages = basePackages;
+        this.contextClasses = findContextClasses();
     }
 
+    private Set<Class<?>> findContextClasses() {
+        return Arrays.stream(basePackages)
+                .map(basePackage -> Inject4jUtils.findClassesByAnnotation(basePackage, Context.class))
+                .flatMap(Collection::stream)
+                .collect(Collectors.toSet());
+    }
 
     void start(){
         contextClasses.forEach(this::createContext);
@@ -99,6 +93,16 @@ class AnnotationAppContext implements AppBeanContext{
         return Arrays.stream(properties).anyMatch(environment::hasProperty);// properties.length;
     }
 
+    private String[] keyAndDefValue(Value value) {
+        String propRef = value.value();
+        for(PropPatternMatcher m : MATCHERS) {
+            String[] values = m.matches(propRef);
+            if(values != null) {
+                return values;
+            }
+        }
+        throw new IllegalArgumentException(String.format("Invalid Prop Access: %s", propRef));
+    }
     private InstanceRef getPropValue(Value value, Class<?> type) {
         // ${*}
         // ${*:*}
@@ -141,11 +145,24 @@ class AnnotationAppContext implements AppBeanContext{
         sb.setLength(len - 2);
         return sb.toString();
     }
+
+    private String beanName(Supplier<String> err, String ... names) {
+        return Arrays.stream(names)
+                .filter(nm -> nm != null && nm.trim().length() > 0)
+                .map(String::trim)
+                .findFirst()
+                .orElseThrow((Supplier<RuntimeException>) () -> new IllegalArgumentException(err.get()));
+    }
+
     private InstanceRef getBean(Class<?> contextClass, Object context, Method method, Inject inject, Class<?> type) {
-        String name = inject.name();
+        /*String name = inject.name();
         if(name == null || name.length() == 0 || name.trim().length() == 0) {
             throw new IllegalArgumentException(String.format("%s.%s @Inject must have name defined", contextClass.getCanonicalName(), method.getName()));
-        }
+        }*/
+        String name = beanName(
+                ()-> String.format("%s.%s @Inject must have name defined", contextClass.getCanonicalName(), method.getName()),
+                inject.name(),
+                method.getName());
         if(!beans.containsKey(name)) return new InstanceRef(false, null);
         if(track.contains(name)) {
             String loop = loop(name);
@@ -189,9 +206,16 @@ class AnnotationAppContext implements AppBeanContext{
             }
         });
         Bean bean = method.getAnnotation(Bean.class);
-        String name = first(bean.name(), method.getName());
+        String name = first(bean.value(), method.getName());
         Class<?> returnType = method.getReturnType();
-        return new BeanRef(name, returnType, beanFactory, new BeanRef.OnBeanCreation() {
+        return new BeanRef(name, returnType, beanFactory, getOnBeanCreation(name));
+    }
+    public final void close(){
+        beans.clear();
+    }
+
+    private BeanRef.OnBeanCreation getOnBeanCreation(String name) {
+        return new BeanRef.OnBeanCreation() {
             @Override
             public void onPre() {
                 track.add(name);
@@ -201,10 +225,7 @@ class AnnotationAppContext implements AppBeanContext{
             public void onPost() {
                 track.remove(name);
             }
-        });
-    }
-    public final void close(){
-        beans.clear();
+        };
     }
 
     public <T> T getBean(String name) {
@@ -255,14 +276,110 @@ class AnnotationAppContext implements AppBeanContext{
     }
 
     private final static PropPatternMatcher[] MATCHERS = {
-        new PropPatternMatcher("\\$\\{(.*):(.*?)\\}"),
-        new PropPatternMatcher("\\$\\{(.*?)\\}"),
-    };@Override
-    public Object createInstnce(Class<?> beanClass) {
-        return null;
-    }@Override
+            new PropPatternMatcher("\\$\\{(.*):(.*?)\\}"),
+            new PropPatternMatcher("\\$\\{(.*?)\\}"),
+    };
+
+    @Override
+    public Object createInstnce(Class<?> beanClass, String beanName) {
+        BeanRef beanRef = createAndGetBeanRef(beanClass, beanName);
+        return beanRef.getBean();
+    }
+
+    private BeanRef createAndGetBeanRef(Class<?> beanClass, String beanName) {
+        final String _beanName = Inject4jUtils.isEmpty(beanName) ? Inject4jUtils.camel(beanClass) : beanName.trim();
+        if(beans.containsKey(beanName)){
+            BeanRef ref = beans.get(beanName);
+            String msg = String.format("Duplicated Beans: %s, [ %s ]", beanName,
+                    String.join(",",
+                            Set.of(ref.beanType, beanClass).stream().map(Class::getCanonicalName).toList()
+                    ));
+            throw new IllegalStateException(msg);
+        }
+        List<Constructor<?>> constructors = Arrays.stream(beanClass.getDeclaredConstructors()).toList();
+        if(constructors.size() > 1) {
+            throw new IllegalStateException(String.format("multiple constructors defined in the class: %s", beanClass.getCanonicalName()));
+        }
+        Constructor<?> constructor = constructors.get(0);
+        int paramCount = constructor.getParameterCount();
+        Parameter[] params = constructor.getParameters();
+        BeanRef[] paramRef = new BeanRef[paramCount];
+        for (int i = 0; i < paramCount; i++) {
+            Parameter param = params[i];
+            paramRef[i] = getBeanRef(param);
+        }
+        BeanRef beanRef = new BeanRef(beanName, beanClass, () -> {
+            try {
+                Object[] paramValues = new Object[paramCount];
+                for (int i = 0; i < paramCount; i++) {
+                    paramValues[i] = paramRef[i].getBean();
+                }
+                return constructor.newInstance(paramValues);
+            } catch (Exception e) {
+                throw new IllegalStateException(
+                        String.format("Failed to create a bean: %s, %s", _beanName, beanClass)
+                );
+            }
+        }, getOnBeanCreation(_beanName));
+        beans.put(beanRef.getName(), beanRef);
+        return beanRef;
+    }
+    private BeanRef getBeanRef(Parameter parameter) {
+        Value value = parameter.getAnnotation(Value.class);
+        if(value != null) {
+            String keyAndDefValue[] = keyAndDefValue(value);
+            //String vl = environment.getProperty(keyAndDefValue[0], keyAndDefValue[1]);
+            InstanceRef ref = getPropValue(value, parameter.getType());
+            if(!ref.provided()) {
+                throw new IllegalArgumentException(
+                        String.format("Invalid Property key found: %s", keyAndDefValue[0])
+                );
+            }
+            return new BeanRef(keyAndDefValue[0], parameter.getType(), ref::instance, getOnBeanCreation(keyAndDefValue[0]));
+        }
+        Inject inject = parameter.getAnnotation(Inject.class);
+        String beanName = beanName(
+                ()->
+                        String.format("No bean found: %s", parameter.getType().getCanonicalName()),
+                inject != null ? inject.name() : "",
+                parameter.getName()
+        );
+        return Optional.ofNullable(
+                beans.get(beanName)
+        ).orElseThrow(()-> new NoSuchElementException(
+                String.format("No bean found: %s, %s", beanName, parameter.getType().getCanonicalName())
+        ));
+    }
+
+    @Override
     public boolean isRestricted(Class<?> beanClass) {
+        Profile profile = beanClass.getAnnotation(Profile.class);
+        if(profile != null) {
+            String[] activatedProfiles = profile.value();
+            Set<String> activeProfiles = environment.activeProfiles;
+            boolean profileActivated = Arrays
+                    .stream(activatedProfiles)
+                    .anyMatch(activeProfiles::contains);
+            if(!profileActivated) {
+                return true;
+            }
+        }
+        ConditionOnProperty condition = beanClass.getAnnotation(ConditionOnProperty.class);
+        if(condition != null) {
+            String[] propertiesRequested = condition.value();
+            return Arrays
+                    .stream(propertiesRequested)
+                    .allMatch(environment::hasProperty);
+        }
         return false;
+    }
+
+    @Override
+    public List<Class<?>> findClassesByAnnotation(Class<? extends Annotation> annotation) {
+        return Arrays.stream(basePackages)
+                .map(basePackage -> Inject4jUtils.findClassesByAnnotation(basePackage, annotation))
+                .flatMap(Collection::stream)
+                .toList();
     }
 
     private static class PropPatternMatcher {
@@ -320,5 +437,4 @@ class AnnotationAppContext implements AppBeanContext{
     private BigDecimal toNum(String str) {
         return new BigDecimal(str);
     }
-
 }

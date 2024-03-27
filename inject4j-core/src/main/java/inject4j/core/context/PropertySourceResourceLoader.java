@@ -13,6 +13,11 @@ class PropertySourceResourceLoader extends PropertySourceInputStream{
     }
 
     private static InputStream input(String path){
+       InputStream input = create(path);
+       return input == null ? InputStream.nullInputStream() : input;
+    }
+
+    private static InputStream create(String path) {
         URI uri = URI.create(path);
         String proto = uri.getScheme();
         if(Objects.equals(proto, "classpath")) {

@@ -4,7 +4,7 @@
     <groupId>inject4j</groupId>
     <artifactId>inject4j-web</artifactId>
     <packaging>jar</packaging>
-    <version>${parent.version}</version>
+    <version>0.0.1-SNAPSHOT</version>
     <name>inject4j</name>
     <url>http://maven.apache.org</url>
     <properties>

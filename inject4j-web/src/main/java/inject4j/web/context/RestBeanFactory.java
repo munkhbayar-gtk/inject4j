@@ -25,9 +25,10 @@ class RestBeanFactory implements BeanFactory {
 
     @Override
     public Object create() {
-        Object instance = context.createInstnce(restClass); // create it from contructor with injections;
         Rest rest = restClass.getAnnotation(Rest.class);
-        String [] routes = rest.value();
+        Object instance = context.createInstnce(restClass, rest.value()); // create it from contructor with injections;
+
+        String [] routes = rest.routes();
         String contextPath = env.getProperty("inject4j.web.context.path", "/");
         List<Method> methods = Arrays.stream(restClass.getDeclaredMethods()).filter(this::isRestMethod).toList();
         methods.forEach(m-> bindMethod(instance, contextPath, routes, m));
@@ -57,7 +58,7 @@ class RestBeanFactory implements BeanFactory {
         }
         Get get = m.getAnnotation(Get.class);
         if(get != null) {
-            return HMethod.of(get,get.value());;
+            return HMethod.of(get,get.value());
         }
         Put put = m.getAnnotation(Put.class);
         if(put != null) {
